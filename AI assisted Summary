@@ -1,0 +1,33 @@
+Summary of Files Investigated
+MN Source Files
+NetworkBuilding.cs — Base class for all MN buildings. Handles spawn/despawn, network registration via mapComp.AddBuilding, gravship transport. Clean, no issues.
+NetworkBuildingNetworkInterface.cs — Bidirectional storage access point. Implements IHaulSource + IHaulDestination. GetDirectlyHeldThings proxies to controller's innerContainer when operational.
+NetworkBuildingNetworkChute.cs — Upload-only variant. No IHaulSource. Otherwise mirrors interface structure.
+NetworkBuildingController.cs — Holds all digitized items in innerContainer. No tick logic of its own. Clean null checks throughout.
+NetworkManager.cs — Static class handling network discovery, merging, splitting. Uses map.thingGrid exclusively — edificeGrid is never used, making isEdifice irrelevant to network discovery.
+NetworksMapComponent.cs — MapComponent holding all networks. Routes to NetworkManager. Ticks all networks each game tick.
+DataNetwork.cs — Core network logic. Key findings:
+
+RefreshHaulRegistration calls building.Map without null guard — root cause of wall mount crash
+TryGetDropTarget uses iface.Position not InteractionCell
+NetworkTick iterates all buildings every tick
+NotifyPowerModeChanged → RefreshHaulRegistrations called every power cycle
+
+NetworkStorageTabActions.cs — Handles drop button in UI. DropStoredThing uses selectedInterface.Position instead of selectedInterface.InteractionCell — root cause of wall variant drop failure.
+CompNetworkBuilding.cs — Completely inert. Just stores powerUsage value. No spawn or tick logic.
+CompNetworkPowerController.cs — Manages grid/reserve power switching. Clean null checks. Not involved in crash.
+NetworkPowerState.cs — Power state machine. Update runs every 60 ticks → NotifyModeChangedIfNeeded → NotifyPowerModeChanged → RefreshHaulRegistrations → triggers the infinite crash loop for wall mounts.
+ITab_NetworkStorage.cs — UI tab. Passes SelectedInterface (cast of SelThing) to drawers. Clean structure, scroll view properly managed.
+PlaceWorker_OneControllerPerNetwork.cs — Uses map.thingGrid for network flood fill. isEdifice irrelevant here too.
+
+RimWorld Engine Classes (via dnSpy)
+Verse.Building.SpawnSetup — Registers edifice in edificeGrid BEFORE base.SpawnSetup. base.SpawnSetup is where mapIndexOrState gets set. For attachments, this sequence means Map can be null during MN's AddBuilding call.
+Verse.Thing.Spawned — Returns false if mapIndexOrState < 0. For attachment buildings, this isn't set until host wall spawn completes, meaning Spawned = false during initial spawn chain.
+Verse.Thing.MapHeld — Returns Map if spawned, else walks ParentHolder chain. Returns null if not spawned and no parent holder.
+
+Fix 1 — Wall mount crash in DataNetwork.cs:
+csharpprivate static void RefreshHaulRegistration(NetworkBuilding building)
+{
+    if (!building.Spawned || building.Map == null) return;
+    // rest unchanged
+}
