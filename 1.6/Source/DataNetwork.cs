@@ -1485,6 +1485,8 @@ namespace SK_Matter_Network
 
         private static void RefreshHaulRegistration(NetworkBuilding building)
         {
+            if (!building.Spawned || building.Map == null) return;
+        
             if (building is IHaulDestination haulDestination)
             {
                 bool registered = building.Map.haulDestinationManager.AllHaulDestinationsListForReading.Contains(haulDestination);
